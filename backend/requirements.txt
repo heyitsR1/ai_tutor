@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+pgvector
+anthropic
+openai
+python-dotenv
+pydantic-settings
+alembic
+sentence-transformers

@@ -1,0 +1,5 @@
+.env
+venv/
+test_backend.py
+test_memory_retrieval.py
+test_imports.py
