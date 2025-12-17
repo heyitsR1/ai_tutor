@@ -9,6 +9,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    xp = Column(Integer, default=0)
+    streak_days = Column(Integer, default=0)
+    last_active_date = Column(DateTime(timezone=True), nullable=True)
     
     conversations = relationship("Conversation", back_populates="user")
 

@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func, text
+from datetime import datetime
 from .models import Memory
 import json
 
@@ -49,3 +50,17 @@ class MemoryManager:
         stmt = delete(Memory).where(Memory.user_id == user_id)
         await self.db.execute(stmt)
         await self.db.commit()
+
+    async def get_due_learning_items(self, user_id: int):
+        """Get learning progress items that are due for review"""
+        # We look for memories where metadata->'next_review_date' exists and is <= now()
+        # and category is 'learning_progress'
+        now_str = datetime.now().isoformat()
+        stmt = select(Memory).where(
+            Memory.user_id == user_id,
+            Memory.metadata_.op("->>")("category") == "learning_progress",
+            Memory.metadata_.op("->>")("next_review_date") <= now_str
+        ).order_by(Memory.metadata_.op("->>")("next_review_date"))
+        
+        result = await self.db.execute(stmt)
+        return result.scalars().all()

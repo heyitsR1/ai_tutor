@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User } from 'lucide-react';
+import { Send, Bot, User, Sparkles } from 'lucide-react';
+import { QuizCard } from './QuizCard';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 interface Message {
@@ -29,18 +29,15 @@ export function Chat({ conversationId, onRollover }: ChatProps) {
         scrollToBottom();
     }, [messages]);
 
-    // Fetch messages when conversationId changes
     useEffect(() => {
         const fetchMessages = async () => {
             try {
                 const res = await axios.get(`/conversations/${conversationId}/messages`);
                 const fetchedMessages = res.data;
-
-                // If new chat (empty), show default messages
                 if (fetchedMessages.length === 0) {
                     setMessages([
-                        { role: 'assistant', content: 'Hello! I am your Agentic AI Tutor. How can I help you learn today?' },
-                        { role: 'assistant', content: "I'm not just a chatbot. I have **Long-term Memory** to remember our past lessons, **Agency** to take initiative, and I can use **Tools** to help you learn better. I'll even automatically summarize our chat and start a new session if we talk too much, so we never lose context! Try asking me to remember something about you." }
+                        { role: 'assistant', content: "Hello! I am Siksak. Let's learn." },
+                        { role: 'assistant', content: "I'll explain concepts in detail first, then test you with a quiz. What do you want to master today?" }
                     ]);
                 } else {
                     setMessages(fetchedMessages);
@@ -51,6 +48,13 @@ export function Chat({ conversationId, onRollover }: ChatProps) {
         };
         fetchMessages();
     }, [conversationId]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    };
 
     const handleSend = async () => {
         if (!input.trim() || isLoading) return;
@@ -68,10 +72,8 @@ export function Chat({ conversationId, onRollover }: ChatProps) {
             const data = res.data;
 
             if (data.new_conversation_id) {
-                // Handle Rollover
                 const systemMsg: Message = { role: 'system', content: data.response };
                 setMessages(prev => [...prev, systemMsg]);
-                // Wait a bit then switch
                 setTimeout(() => {
                     onRollover(data.new_conversation_id);
                 }, 2000);
@@ -82,58 +84,87 @@ export function Chat({ conversationId, onRollover }: ChatProps) {
 
         } catch (error) {
             console.error('Error sending message:', error);
-            setMessages(prev => [...prev, { role: 'system', content: 'Error: Could not connect to the tutor.' }]);
+            setMessages(prev => [...prev, { role: 'system', content: 'Connection Error.' }]);
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className="flex flex-col h-full w-full max-w-4xl mx-auto p-4">
-            <div className="flex-1 overflow-y-auto space-y-4 mb-4 p-4 rounded-lg bg-gray-900/50 backdrop-blur-sm border border-gray-800">
+        <div className="flex flex-col h-full w-full max-w-5xl mx-auto relative overflow-hidden">
+            {/* Messages Area - Flex 1 to fill available space */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scrollbar-thin scrollbar-thumb-indigo-200 scrollbar-track-transparent">
                 {messages.map((msg, idx) => (
                     <div
                         key={idx}
                         className={twMerge(
-                            "flex items-start gap-3 max-w-[80%]",
+                            "flex items-start gap-3 max-w-[90%] md:max-w-[80%]",
                             msg.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto",
                             msg.role === 'system' && "mx-auto max-w-full"
                         )}
                     >
                         {msg.role !== 'system' && (
                             <div className={twMerge(
-                                "p-2 rounded-full",
-                                msg.role === 'user' ? "bg-blue-600" : "bg-purple-600"
+                                "flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center shadow-sm",
+                                msg.role === 'user'
+                                    ? "bg-gradient-to-br from-indigo-500 to-purple-600 text-white"
+                                    : "bg-white border border-indigo-100 text-indigo-600"
                             )}>
-                                {msg.role === 'user' ? <User size={20} /> : <Bot size={20} />}
+                                {msg.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
                             </div>
                         )}
+
                         <div className={twMerge(
-                            "p-3 rounded-2xl px-4",
+                            "p-4 rounded-2xl shadow-sm text-sm leading-relaxed",
                             msg.role === 'user'
-                                ? "bg-blue-600/20 border border-blue-500/30 text-blue-100 rounded-tr-sm"
+                                ? 'bg-indigo-600 text-white rounded-tr-sm'
                                 : msg.role === 'system'
-                                    ? "bg-yellow-900/20 border border-yellow-500/30 text-yellow-200 text-center w-full"
-                                    : "bg-gray-800/80 border border-gray-700 text-gray-100 rounded-tl-sm"
+                                    ? 'bg-amber-50 text-amber-900 border border-amber-200 w-full text-center'
+                                    : 'bg-white border border-indigo-50 text-slate-700 rounded-tl-sm shadow-indigo-100/50'
                         )}>
-                            <div className="prose prose-invert text-sm max-w-none">
-                                <ReactMarkdown>
-                                    {msg.content}
-                                </ReactMarkdown>
+                            <div className={twMerge("prose max-w-none text-sm", msg.role === 'user' ? "prose-invert" : "prose-slate")}>
+                                {msg.content.includes(":::quiz") ? (
+                                    (() => {
+                                        try {
+                                            const parts = msg.content.split(":::quiz");
+                                            const textContent = parts[0];
+                                            const match = msg.content.match(/:::quiz\s*([\s\S]*?)\s*:::/);
+
+                                            return (
+                                                <div className="space-y-4">
+                                                    <ReactMarkdown>{textContent}</ReactMarkdown>
+                                                    {match && (() => {
+                                                        const quizData = JSON.parse(match[1]);
+                                                        return <QuizCard data={quizData} onComplete={(xp) => {
+                                                            axios.post(`/conversations/${conversationId}/messages`, {
+                                                                message: `[System Event] User completed quiz with ${xp} XP.`
+                                                            }).catch(err => console.error(err));
+                                                        }} />;
+                                                    })()}
+                                                </div>
+                                            );
+                                        } catch (e) {
+                                            // Fallback
+                                            return <ReactMarkdown>{msg.content}</ReactMarkdown>;
+                                        }
+                                    })()
+                                ) : (
+                                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                )}
                             </div>
                         </div>
                     </div>
                 ))}
                 {isLoading && (
                     <div className="flex items-start gap-3 mr-auto">
-                        <div className="p-2 rounded-full bg-purple-600">
-                            <Bot size={20} />
+                        <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-white border border-indigo-100 text-indigo-600 flex items-center justify-center shadow-sm">
+                            <Sparkles size={16} />
                         </div>
-                        <div className="bg-gray-800/80 border border-gray-700 p-3 rounded-2xl rounded-tl-sm">
-                            <div className="flex gap-1">
-                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                        <div className="bg-white border border-indigo-50 p-4 rounded-2xl rounded-tl-sm shadow-sm">
+                            <div className="flex gap-1.5">
+                                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                                <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                                <span className="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                             </div>
                         </div>
                     </div>
@@ -141,23 +172,30 @@ export function Chat({ conversationId, onRollover }: ChatProps) {
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="relative">
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder="Ask your tutor anything..."
-                    className="w-full bg-gray-900 border border-gray-700 rounded-xl py-4 pl-4 pr-12 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent placeholder-gray-500"
-                    disabled={isLoading}
-                />
-                <button
-                    onClick={handleSend}
-                    disabled={isLoading || !input.trim()}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    <Send size={20} />
-                </button>
+            {/* Layout Fix: Input Area is now a standard flex item, not absolute */}
+            <div className="w-full bg-white border-t border-indigo-50 mt-auto">
+                <div className="max-w-3xl mx-auto w-full p-2">
+                    <div className="relative flex items-center">
+                        <textarea
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder="Ask Siksak..."
+                            className="w-full bg-transparent border-none rounded-xl px-4 py-3 pr-12 text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-0 resize-none max-h-32 text-sm"
+                            rows={1}
+                            style={{ minHeight: '44px' }}
+                        />
+                        <div className="absolute right-1.5 bottom-1.5">
+                            <button
+                                onClick={handleSend}
+                                disabled={isLoading || !input.trim()}
+                                className="p-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md active:scale-95 flex items-center justify-center transform scale-90"
+                            >
+                                <Send size={16} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );
