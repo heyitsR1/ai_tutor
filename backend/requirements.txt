@@ -9,3 +9,4 @@ python-dotenv
 pydantic-settings
 alembic
 sentence-transformers
+duckduckgo-search>=6.0.0

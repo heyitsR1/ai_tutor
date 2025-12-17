@@ -1,4 +1,4 @@
-import { MessageSquare, Plus, Trash2, User, Users, Database } from 'lucide-react';
+import { MessageSquare, Plus, Trash2, User, Users, Database, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -29,7 +29,6 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
     const [users, setUsers] = useState<UserInfo[]>([]);
     const [showUserDropdown, setShowUserDropdown] = useState(false);
 
-    // Fetch users on mount
     useEffect(() => {
         fetchUsers();
     }, []);
@@ -46,10 +45,9 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
     const handleDeleteChat = async (e: React.MouseEvent, convId: number) => {
         e.stopPropagation();
         if (!confirm('Delete this conversation?')) return;
-
         try {
             await axios.delete(`/conversations/${convId}`);
-            window.location.reload(); // Simple refresh for now
+            window.location.reload();
         } catch (err) {
             console.error('Failed to delete conversation', err);
         }
@@ -57,7 +55,6 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
 
     const handleClearAllChats = async () => {
         if (!confirm('Delete ALL your conversations? This cannot be undone.')) return;
-
         try {
             await axios.delete(`/conversations?user_id=${currentUserId}`);
             window.location.reload();
@@ -68,7 +65,6 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
 
     const handleClearMemories = async () => {
         if (!confirm('Delete ALL your memories? This cannot be undone.')) return;
-
         try {
             await axios.delete(`/memories?user_id=${currentUserId}`);
             alert('All memories cleared!');
@@ -80,21 +76,26 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
     const currentUser = users.find(u => u.id === currentUserId) || { id: currentUserId, username: `User ${currentUserId}` };
 
     return (
-        <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col h-full">
+        <div className="w-64 flex flex-col h-full bg-white/60 backdrop-blur-xl border-r border-indigo-100 shadow-xl relative z-20">
+            {/* Cyber Core Gradient Line at top */}
+            <div className="h-1 w-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-500"></div>
+
             {/* User Selector */}
-            <div className="p-4 border-b border-gray-800">
+            <div className="p-4 border-b border-indigo-50">
                 <div className="relative">
                     <button
                         onClick={() => setShowUserDropdown(!showUserDropdown)}
-                        className="w-full flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors text-sm"
+                        className="w-full flex items-center gap-3 px-3 py-2.5 bg-white hover:bg-indigo-50/50 rounded-xl transition-all shadow-sm border border-indigo-100 group"
                     >
-                        <Users size={16} />
-                        <span className="flex-1 text-left truncate">{currentUser.username}</span>
-                        <span className="text-xs text-gray-500">▼</span>
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+                            <User size={16} />
+                        </div>
+                        <span className="flex-1 text-left truncate text-slate-700 font-semibold group-hover:text-indigo-600 transition-colors">{currentUser.username}</span>
+                        <span className="text-xs text-indigo-300 group-hover:text-indigo-500">▼</span>
                     </button>
 
                     {showUserDropdown && (
-                        <div className="absolute top-full mt-1 left-0 right-0 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                        <div className="absolute top-full mt-2 left-0 right-0 bg-white border border-indigo-100 rounded-xl shadow-2xl shadow-indigo-900/10 z-50 max-h-56 overflow-y-auto p-1.5 animation-fade-in">
                             {users.map(user => (
                                 <button
                                     key={user.id}
@@ -103,22 +104,26 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
                                         setShowUserDropdown(false);
                                     }}
                                     className={clsx(
-                                        "w-full px-3 py-2 text-left text-sm hover:bg-gray-700 transition-colors",
-                                        user.id === currentUserId && "bg-gray-700 text-purple-400"
+                                        "w-full px-3 py-2.5 text-left text-sm rounded-lg transition-all flex items-center gap-2",
+                                        user.id === currentUserId
+                                            ? "bg-indigo-50 text-indigo-700 font-semibold"
+                                            : "hover:bg-slate-50 text-slate-600 hover:text-indigo-600"
                                     )}
                                 >
+                                    <div className={clsx("w-2 h-2 rounded-full", user.id === currentUserId ? "bg-indigo-500" : "bg-slate-300")} />
                                     {user.username}
                                 </button>
                             ))}
+                            <div className="h-px bg-indigo-50 my-1.5" />
                             <button
                                 onClick={() => {
                                     const newId = Math.max(...users.map(u => u.id), 0) + 1;
                                     onUserChange(newId);
                                     setShowUserDropdown(false);
                                 }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-700 transition-colors border-t border-gray-700 text-green-400"
+                                className="w-full px-3 py-2.5 text-left text-sm hover:bg-emerald-50 text-emerald-600 font-medium rounded-lg flex items-center gap-2 transition-colors"
                             >
-                                + Create New User
+                                <Plus size={14} /> Create New User
                             </button>
                         </div>
                     )}
@@ -126,75 +131,82 @@ export function Sidebar({ conversations, currentId, currentUserId, onSelect, onN
             </div>
 
             {/* Action Buttons */}
-            <div className="p-4 space-y-2">
+            <div className="p-4 pt-2">
                 <button
                     onClick={onNewChat}
-                    className="w-full flex items-center gap- px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors font-medium text-sm"
+                    className="w-full group relative overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-[length:200%_auto] hover:bg-right transition-all duration-500 p-[1px] shadow-lg shadow-indigo-500/20 active:scale-95"
                 >
-                    <Plus size={18} />
-                    New Chat
-                </button>
-                <button
-                    onClick={onNewGuestChat}
-                    className="w-full flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors text-sm"
-                >
-                    <User size={16} />
-                    Guest Mode
+                    <div className="bg-white/0 flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl text-white font-bold tracking-tight">
+                        <Plus size={18} className="group-hover:rotate-90 transition-transform duration-300" />
+                        <span>NEW CHAT</span>
+                    </div>
                 </button>
             </div>
 
             {/* Conversations List */}
-            <div className="flex-1 overflow-y-auto px-2 space-y-1">
-                {conversations.map((conv) => (
-                    <div key={conv.id} className="relative group">
-                        <button
+            <div className="flex-1 overflow-y-auto px-3 space-y-2 scrollbar-thin scrollbar-thumb-indigo-100 scrollbar-track-transparent">
+                <div className="text-[10px] font-bold text-indigo-300 px-2 uppercase tracking-wider mb-1 mt-2">History</div>
+                {conversations.map((conv) => {
+                    const isActive = currentId === conv.id;
+                    return (
+                        <div
+                            key={conv.id}
+                            className={`group relative flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-300 border ${isActive
+                                ? 'bg-white border-indigo-200 shadow-md shadow-indigo-100 border-l-4 border-l-purple-500'
+                                : 'hover:bg-white/60 border-transparent hover:border-indigo-100/50 text-slate-500 hover:text-slate-800'
+                                }`}
                             onClick={() => onSelect(conv.id)}
-                            className={clsx(
-                                "w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-left transition-colors pr-10",
-                                currentId === conv.id
-                                    ? "bg-gray-800 text-white"
-                                    : "text-gray-400 hover:bg-gray-800/50 hover:text-gray-200"
-                            )}
                         >
-                            <MessageSquare size={18} />
-                            <span className="truncate flex-1">{conv.title || "New Conversation"}</span>
-                        </button>
-                        <button
-                            onClick={(e) => handleDeleteChat(e, conv.id)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-red-500/20 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                            <Trash2 size={14} />
-                        </button>
-                    </div>
-                ))}
+                            <div className={`p-2 rounded-lg ${isActive ? 'bg-gradient-to-br from-indigo-100 to-purple-100 text-purple-600' : 'bg-slate-100 group-hover:bg-white text-slate-400'}`}>
+                                <MessageSquare size={16} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-semibold truncate ${isActive ? 'text-slate-800' : 'text-slate-600'}`}>
+                                    {conv.title || "New Conversation"}
+                                </p>
+                                <p className="text-[10px] text-slate-400 mt-0.5 font-mono opacity-70">
+                                    {new Date(conv.created_at).toLocaleDateString()}
+                                </p>
+                            </div>
+                            <button
+                                onClick={(e) => handleDeleteChat(e, conv.id)}
+                                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-500 transition-all ${isActive ? 'opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Bottom Actions */}
-            <div className="p-4 border-t border-gray-800 space-y-2">
+            <div className="p-4 border-t border-indigo-50 bg-white/40 backdrop-blur-md space-y-2">
+
+                <div className="grid grid-cols-2 gap-2">
+                    <button
+                        onClick={handleClearAllChats}
+                        className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 border border-slate-100 hover:border-red-100 rounded-xl transition-all shadow-sm"
+                    >
+                        <Trash2 size={16} />
+                        <span className="text-[10px] font-medium">Clear Chat</span>
+                    </button>
+                    <button
+                        onClick={handleClearMemories}
+                        className="flex flex-col items-center justify-center gap-1.5 p-3 bg-white hover:bg-orange-50 text-slate-400 hover:text-orange-500 border border-slate-100 hover:border-orange-100 rounded-xl transition-all shadow-sm"
+                    >
+                        <Database size={16} />
+                        <span className="text-[10px] font-medium">Reset Memory</span>
+                    </button>
+                </div>
+
                 <button
                     onClick={onProfileClick}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors text-sm"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-3 mt-2 bg-gradient-to-r from-slate-800 to-slate-700 text-white rounded-xl transition-all hover:shadow-lg shadow-slate-900/20 active:scale-95"
                 >
                     <User size={16} />
-                    View Profile
+                    <span className="text-sm font-medium">View Profile</span>
                 </button>
-                <button
-                    onClick={handleClearAllChats}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/20 rounded-lg transition-colors text-xs"
-                >
-                    <Trash2 size={14} />
-                    Clear All Chats
-                </button>
-                <button
-                    onClick={handleClearMemories}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-orange-600/10 hover:bg-orange-600/20 text-orange-400 border border-orange-500/20 rounded-lg transition-colors text-xs"
-                >
-                    <Database size={14} />
-                    Clear All Memories
-                </button>
-                <div className="text-xs text-gray-500 text-center pt-2">
-                    Agentic AI Tutor v1.0
-                </div>
+
             </div>
         </div>
     );
