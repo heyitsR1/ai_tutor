@@ -489,6 +489,52 @@ NOTE ON GUEST MODE
                         final_response_text += f"\n\n(I tried to search for '{query}' but encountered an error.)"
 
         
+
+        # 2.5 LAZINESS GUARD (Recursive Fix)
+        # If the model called tools (other than search/quiz) but gave NO text explanation, we force a retry.
+        # We check response.content, NOT final_response_text (which contains tool logs).
+        is_lazy_response = (not response.content or len(response.content) < 50) and response.tool_calls
+        
+        # Check if we already did a recursive fix in search_web (which updates final_response_text completely)
+        # If search_web was called, final_response_text is likely long now, but response.content is still short/empty from the first pass.
+        # So we trust final_response_text length if search was involved.
+        has_search = any(t["name"] == "search_web" for t in (response.tool_calls or []))
+        
+        if is_lazy_response and not has_search:
+            print("DEBUG: Detected Lazy Response (Tools but no text). Forcing recursion.")
+             
+            # Construct a stiff reprimand
+            tool_summary = ", ".join([t["name"] for t in response.tool_calls])
+            correction_msg = {
+                "role": "system",
+                "content": f"ERROR: You performed tool actions ({tool_summary}) but FAILED to write a detailed explanation (Text First). \n\nINSTRUCTION: Write a detailed (300+ words) explanation for the user's request. AND IMMEDIATELY call `present_quiz`."
+            }
+            
+            # Append the 'bad' turn to history so the model knows what it did
+            # We treat the tool calls as having happened.
+            llm_messages.append({"role": "assistant", "content": f"(Performed tools: {tool_summary})"})
+            llm_messages.append(correction_msg)
+            llm_messages.append(force_quiz_reminder)
+            
+            # Recursive Gen
+            response_retry = await self.llm.generate(llm_messages, tools)
+            
+            # Prepend the new text to the existing tool logs
+            # final_response_text currently holds `(I have updated memory...)`
+            # We want `Here is the explanation... \n\n (I have updated memory...)`
+            final_response_text = response_retry.content + "\n\n" + final_response_text
+            
+            # Handle new tools from retry (Mainly Quiz)
+            if response_retry.tool_calls:
+                 for tool_retry in response_retry.tool_calls:
+                    if tool_retry["name"] == "present_quiz":
+                        import json
+                        quiz_data = tool_retry["input"]
+                        quiz_data["xp_reward"] = quiz_data.get("xp_reward", 100)
+                        json_str = json.dumps(quiz_data)
+                        final_response_text += f"\n\n:::quiz {json_str} :::\n\n(I've prepared a quiz for you above!)"
+                    # Ignore other tools to prevent double-dipping/loops
+
         # 3. Save Assistant Response
         ai_msg_db = Message(conversation_id=conversation_id, role="assistant", content=final_response_text)
         self.db.add(ai_msg_db)
