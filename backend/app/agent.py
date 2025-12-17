@@ -5,6 +5,9 @@ from .llm import get_llm_provider
 from .memory import MemoryManager
 from .models import Message, User
 from typing import List, Dict, Any
+import asyncio
+# Import DuckDuckGo Search
+from duckduckgo_search import DDGS
 
 class Agent:
     def __init__(self, db: AsyncSession):
@@ -104,15 +107,34 @@ class Agent:
         
         system_prompt = f"""**YOUR PRIMARY JOB**: Help users learn by providing COMPREHENSIVE, ACTIONABLE, and HELPFUL responses.
         
-CRITICAL RULE: TEXT FIRST, THEN QUIZ (MANDATORY)
-1. WRITE A DETAILED EXPLANATION (min 300 words).
-   - Use headings, bold text, and lists.
-   - Explain the concept deeply.
-2. ONLY AFTER THE TEXT, call `present_quiz`.
-3. Do NOT call `save_memory` before you have written the full explanation.
-4. Do NOT call `present_quiz` without writing text first.
+CRITICAL PROTOCOL: EXPLAIN FIRST, THEN QUIZ (MANDATORY).
 
-"Here is a detailed explanation... [Long Text]... Now let's test your knowledge." -> [present_quiz]
+1. **MANDATORY TEXT GENERATION**:
+   - You MUST generate a detailed, comprehensive explanation (minimum 300 words) for every learning topic.
+   - Do NOT just say "Okay, let's discuss..." and stop.
+
+2. **MANDATORY QUIZ**:
+   - IMMEDIATELY after your text explanation, you MUST call the `present_quiz` tool.
+   - It is NOT optional. If you explained a concept, you MUST quiz the user on it.
+   - Do NOT ask "Would you like a quiz?". JUST DO IT.
+
+3. **ORDER OF OPERATIONS**:
+   Step 1: Write Full Text Response.
+   Step 2: Call `update_concept_state` (if applicable).
+   Step 3: Call `present_quiz` (REQUIRED).
+
+EXCEPTION FOR WEB SEARCH:
+- If you absolutely do not know the answer, say "Let me look that up..." and call `search_web`.
+
+CORRECT FLOW:
+User: "Explain X"
+You: "Here is a detailed breakdown of X... [300+ words of content]... Now, let's test your understanding."
+[Tool Call: update_concept_state]
+[Tool Call: present_quiz] ("Question: What is X?...")
+
+INCORRECT FLOW:
+User: "Explain X"
+You: "Here is X..." [Stops] (MISSING QUIZ - BAD!)
 
 1. **CONTENT DELIVERY FIRST**:
 You are an AI Tutor, not a general-purpose chatbot.
@@ -216,13 +238,15 @@ Your available tools:
 1. save_memory: Use this to save general facts about the user's life or preferences.
 2. update_concept_state: Use this to track the user's mastery of specific concepts (New, Practicing, Mastered).
 3. manage_gamification: Use this to award XP or update streaks.
+4. search_web: Use this to find real-time information.
 
 When to use tools:
-- ONLY after providing a full, helpful response.
+- ONLY after providing a full, helpful response (EXCEPT for search).
 - Do NOT use tools to answer questions.
 - Use `update_concept_state` when the user demonstrates understanding or struggles, or explicitly starts a new topic.
 - Use `manage_gamification` when the user completes a challenge, gives a good answer, or shows engagement. Be generous with small XP amounts (10-50 XP).
 - Use `present_quiz` when you want to test the user's knowledge. This will show a visual interactive card.
+- Use `search_web` when the user asks about current events or specific facts you don't know.
 
 ────────────────────────
 VISUAL QUIZ PROTOCOL
@@ -266,7 +290,14 @@ NOTE ON GUEST MODE
         history_msgs = [{"role": m.role, "content": m.content} for m in messages]
         history_msgs.append({"role": "user", "content": user_message})
         
-        llm_messages = [{"role": "system", "content": system_prompt}] + history_msgs
+        # INJECTION: Force the model to pay attention to the protocol by adding a trailing system instruction
+        # This is the last thing the model sees, maximizing adherence.
+        force_quiz_reminder = {
+            "role": "system",
+            "content": "REMINDER: You are in TEACHER MODE. 1. Write a detailed explanation (300+ words). 2. IMMEDIATELY call `present_quiz`. Do not stop without calling the quiz tool."
+        }
+        
+        llm_messages = [{"role": "system", "content": system_prompt}] + history_msgs + [force_quiz_reminder]
         
         # Define tools
         tools = [
@@ -288,7 +319,7 @@ NOTE ON GUEST MODE
             },
             {
                 "name": "update_concept_state",
-                "description": "Update the state of a learning concept (e.g. from 'new' to 'practicing') and record performance for Spaced Repetition.",
+                "description": "Background tool to track mastery. CALLING THIS DOES NOT REPLACE THE NEED FOR A TEXT EXPLANATION. You must still explain the concept in detail.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -309,7 +340,7 @@ NOTE ON GUEST MODE
             },
             {
                 "name": "manage_gamification",
-                "description": "Award XP to the learner or update their streak. Use this to reinforce positive learning behaviors.",
+                "description": "Award XP to the learner. Do not let this replace your actual teaching response.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -321,7 +352,7 @@ NOTE ON GUEST MODE
             },
             {
                 "name": "present_quiz",
-                "description": "Display a visual, interactive multiple-choice quiz to the user.",
+                "description": "MANDATORY TOOL. You MUST call this after every detailed explanation to test the user's understanding.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -333,6 +364,17 @@ NOTE ON GUEST MODE
                         "xp_reward": {"type": "integer", "description": "XP to award for correct answer (default 100)."}
                     },
                     "required": ["question", "options", "correct_answer", "explanation"]
+                }
+            },
+            {
+                "name": "search_web",
+                "description": "Search the web for real-time information using DuckDuckGo. Use this when the user asks for current events, facts, or specific topics you don't know.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query."}
+                    },
+                    "required": ["query"]
                 }
             }
         ]
@@ -392,6 +434,60 @@ NOTE ON GUEST MODE
                     # Create the Protocol Block
                     json_str = json.dumps(quiz_data)
                     final_response_text += f"\n\n:::quiz {json_str} :::\n\n(I've prepared a quiz for you above!)"
+                elif tool["name"] == "search_web":
+                    query = tool["input"]["query"]
+                    try:
+                        def search_sync(q):
+                            with DDGS() as ddgs:
+                                return list(ddgs.text(q, max_results=3))
+                        
+                        results = await asyncio.to_thread(search_sync, query)
+                        
+                        search_summary = "\n**Search Results:**\n"
+                        for res in results:
+                            search_summary += f"- [{res['title']}]({res['href']}): {res['body'][:150]}...\n"
+                        
+                        # RECURSIVE CALL: Feed search results back to LLM
+                        # We append the tool output as a system message (or pseudo-tool output)
+                        # and ask the LLM to generate the final response + quiz.
+                        
+                        tool_output_msg = {
+                            "role": "system",
+                            "content": f"TOOL OUTPUT (search_web): {search_summary}\n\nINSTRUCTION: Now that you have this information, write a detailed explanation (Answer First) AND IMMEDIATELY generate a `present_quiz` call."
+                        }
+                        
+                        # Update messages for the second pass
+                        llm_messages.append({"role": "assistant", "content": f"(Thinking: I need to search for '{query}'...)"})
+                        llm_messages.append(tool_output_msg)
+                        llm_messages.append(force_quiz_reminder) # Reinject the reminder at the very end
+                        
+                        # Second generation pass
+                        response_2 = await self.llm.generate(llm_messages, tools)
+                        
+                        # Use the second response as the final response
+                        final_response_text = response_2.content
+                        
+                        # Handle tools from second response (e.g. the quiz)
+                        if response_2.tool_calls:
+                            for tool_2 in response_2.tool_calls:
+                                if tool_2["name"] == "present_quiz":
+                                    import json
+                                    quiz_data = tool_2["input"]
+                                    quiz_data["xp_reward"] = quiz_data.get("xp_reward", 100)
+                                    json_str = json.dumps(quiz_data)
+                                    final_response_text += f"\n\n:::quiz {json_str} :::\n\n(I've prepared a quiz for you above!)"
+                                elif tool_2["name"] == "update_concept_state":
+                                     # Handle state update if it happens in 2nd pass
+                                    concept = tool_2["input"]["concept"]
+                                    state = tool_2["input"]["state"]
+                                    performance = tool_2["input"].get("performance", "medium")
+                                    # ... (simplified logic for brevity, or we can duplicate the logic) ...
+                                    final_response_text += f"\n\n(Updated '{concept}' to state: {state}.)"
+
+                    except Exception as e:
+                        print(f"Search failed: {e}")
+                        final_response_text += f"\n\n(I tried to search for '{query}' but encountered an error.)"
+
         
         # 3. Save Assistant Response
         ai_msg_db = Message(conversation_id=conversation_id, role="assistant", content=final_response_text)

@@ -28,7 +28,7 @@ services:
       # For local LLM (e.g., Ollama running on host)
       LOCAL_LLM_URL: http://host.docker.internal:11434/v1 
     volumes:
-      - ./backend/app:/app/app
+      - ./backend:/app
     depends_on:
       db:
         condition: service_healthy
