@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Explicitly allow frontend origin
+    allow_origins=["*"],  # Allow all origins to fix CORS issues in dev
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +36,40 @@ class CreateConversationRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+
+class EnhancePromptRequest(BaseModel):
+    prompt: str
+
+@app.post("/enhance-prompt")
+async def enhance_prompt(request: EnhancePromptRequest, db: AsyncSession = Depends(get_db)):
+    """Enhance a user prompt for better learning outcomes"""
+    from .llm import get_llm_provider
+    
+    llm = get_llm_provider()
+    
+    enhancement_prompt = f"""Improve this learning question to be clearer and more specific. Keep it concise (1-2 sentences max).
+
+    CRITICAL: ONLY RETURN THE ENHANCED PROMPT. DO NOT RETURN ANYTHING ELSE.NO "HERE IS THE ENHANCED PROMPT:" OR ANYTHING LIKE THAT. THIS IS NON NEGOTIABLE.
+
+Original prompt: "{request.prompt}"
+
+Rules:
+- Make it more specific if too vague
+- Add context if it helps
+- Keep it natural and conversational
+- Don't make it too long
+- If the prompt is already good, return it mostly unchanged
+
+Enhanced prompt:"""
+    
+    messages = [{"role": "user", "content": enhancement_prompt}]
+    response = await llm.generate(messages, None)
+    
+    enhanced = response.content.strip() if response.content else request.prompt
+    # Remove any quotes the LLM might add
+    enhanced = enhanced.strip('"\'')
+    
+    return {"original": request.prompt, "enhanced": enhanced}
 
 @app.post("/conversations")
 async def create_conversation(request: CreateConversationRequest, db: AsyncSession = Depends(get_db)):
@@ -82,7 +116,7 @@ async def send_message(conversation_id: int, request: ChatRequest, db: AsyncSess
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
-    agent = Agent(db)
+    agent = Agent(db, user_id=conversation.user_id)
     response_data = await agent.process_message(
         request.message, 
         conversation_id, 
@@ -90,6 +124,19 @@ async def send_message(conversation_id: int, request: ChatRequest, db: AsyncSess
         bool(conversation.is_guest_mode)
     )
     return response_data
+
+class UpdateConversationRequest(BaseModel):
+    title: str
+
+@app.patch("/conversations/{conversation_id}")
+async def update_conversation(conversation_id: int, request: UpdateConversationRequest, db: AsyncSession = Depends(get_db)):
+    """Update conversation title"""
+    from sqlalchemy import update as sql_update
+    
+    stmt = sql_update(Conversation).where(Conversation.id == conversation_id).values(title=request.title)
+    await db.execute(stmt)
+    await db.commit()
+    return {"id": conversation_id, "title": request.title}
 
 @app.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: int, db: AsyncSession = Depends(get_db)):
@@ -148,6 +195,91 @@ async def list_users(db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     users = result.scalars().all()
     return [{"id": u.id, "username": u.username} for u in users]
+
+@app.get("/users/{user_id}/stats")
+async def get_user_stats(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Get user XP, level, and streak stats"""
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    xp = user.xp or 0
+    streak = user.streak_days or 0
+    
+    # Calculate level using triangular numbers: Level N requires 100 * N * (N+1) / 2 XP
+    # Level 1: 0-100, Level 2: 100-300, Level 3: 300-600, etc.
+    def get_level_info(total_xp: int):
+        level = 1
+        xp_for_current_level = 0
+        while True:
+            xp_for_next_level = 100 * level * (level + 1) // 2
+            if total_xp < xp_for_next_level:
+                return {
+                    "level": level,
+                    "current_xp": total_xp - xp_for_current_level,
+                    "xp_for_next_level": xp_for_next_level - xp_for_current_level,
+                    "total_xp": total_xp
+                }
+            xp_for_current_level = xp_for_next_level
+            level += 1
+    
+    level_info = get_level_info(xp)
+    
+    # Level titles
+    level_titles = {
+        1: "Novice",
+        2: "Apprentice", 
+        3: "Scholar",
+        4: "Sage",
+        5: "Master",
+        6: "Grandmaster",
+        7: "Legend"
+    }
+    title = level_titles.get(level_info["level"], "Mythic")
+    
+    return {
+        "user_id": user_id,
+        "username": user.username,
+        "total_xp": xp,
+        "level": level_info["level"],
+        "level_title": title,
+        "current_xp": level_info["current_xp"],
+        "xp_for_next_level": level_info["xp_for_next_level"],
+        "progress_percent": round((level_info["current_xp"] / level_info["xp_for_next_level"]) * 100, 1),
+        "streak_days": streak
+    }
+
+# ====== Model Settings Endpoints ======
+from .llm import get_user_llm_settings, set_user_llm_settings
+
+class ModelSettingsRequest(BaseModel):
+    provider: str  # "claude" or "groq"
+    api_key: Optional[str] = None  # Required for GROQ
+
+@app.get("/users/{user_id}/settings/model")
+async def get_model_settings(user_id: int):
+    """Get user's current LLM provider settings"""
+    settings = get_user_llm_settings(user_id)
+    return {
+        "provider": settings.get("provider", "claude"),
+        "has_api_key": bool(settings.get("api_key")),
+        "available_providers": [
+            {"id": "claude", "name": "Claude (Default)", "requires_key": False},
+            {"id": "groq", "name": "GROQ (Llama 3.3 70B)", "requires_key": True}
+        ]
+    }
+
+@app.post("/users/{user_id}/settings/model")
+async def update_model_settings(user_id: int, settings: ModelSettingsRequest):
+    """Update user's LLM provider settings"""
+    if settings.provider == "groq" and not settings.api_key:
+        raise HTTPException(status_code=400, detail="GROQ API key is required")
+    
+    set_user_llm_settings(user_id, settings.provider, settings.api_key)
+    return {"message": f"Switched to {settings.provider}", "provider": settings.provider}
 
 @app.get("/")
 async def root():

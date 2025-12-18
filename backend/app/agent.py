@@ -5,12 +5,38 @@ from .llm import get_llm_provider
 from .memory import MemoryManager
 from .models import Message, User
 from typing import List, Dict, Any
+from .models import Conversation
 
 class Agent:
-    def __init__(self, db: AsyncSession):
-        self.llm = get_llm_provider()
+    def __init__(self, db: AsyncSession, user_id: int = None):
+        self.llm = get_llm_provider(user_id)
         self.memory = MemoryManager(db)
         self.db = db
+        self.user_id = user_id
+    
+    async def generate_title(self, user_message: str) -> str:
+        """Generate a concise chat title from the first user message"""
+        prompt = f"""Generate a very short, concise title (max 30 characters) for a chat that starts with this message:
+
+"{user_message}"
+
+Rules:
+- Maximum 30 characters
+- No quotes or special formatting
+- Capture the main topic/intent
+- Use title case
+
+Examples:
+- "teach me python loops" -> "Python Loops"
+- "what is machine learning" -> "Machine Learning Intro"
+- "help me with calculus derivatives" -> "Calculus Derivatives"
+
+Title:"""
+        
+        title_messages = [{"role": "user", "content": prompt}]
+        response = await self.llm.generate(title_messages, None)
+        title = response.content.strip()[:30] if response.content else "New Chat"
+        return title
 
     async def process_message(self, user_message: str, conversation_id: int, user_id: int, is_guest_mode: bool = False):
         # 0. Check for Rollover
@@ -103,19 +129,102 @@ class Agent:
 
         
         system_prompt = f"""**YOUR PRIMARY JOB**: Help users learn by providing COMPREHENSIVE, ACTIONABLE, and HELPFUL responses.
-        
-CRITICAL RULE: TEXT FIRST, THEN QUIZ (MANDATORY)
-1. WRITE A DETAILED EXPLANATION (min 300 words).
-   - Use headings, bold text, and lists.
-   - Explain the concept deeply.
-2. ONLY AFTER THE TEXT, call `present_quiz`.
-3. Do NOT call `save_memory` before you have written the full explanation.
-4. Do NOT call `present_quiz` without writing text first.
 
-"Here is a detailed explanation... [Long Text]... Now let's test your knowledge." -> [present_quiz]
+## 🚨🚨🚨 MANDATORY ACTION TRIGGERS 🚨🚨🚨
+**CRITICAL**: When the user message contains [ACTION: X], you MUST call the specified tool. This is NOT optional.
+
+| User Says | YOU MUST DO |
+|-----------|-------------|
+| [ACTION: QUIZ] | Call `present_quiz` with 3 questions about recent topics |
+| [ACTION: CHEATSHEET] | Call `generate_cheatsheet` with topic and sections array |
+| [ACTION: RESOURCES] | Call `web_search` with a query about the recent topic |
+
+**FAILURE TO CALL THE TOOL IS A CRITICAL ERROR.**
+
+When responding to an ACTION:
+1. Write ONE short sentence (10 words max) like "Here's your quiz!" or "Let me find resources..."
+2. IMMEDIATELY call the required tool
+3. DO NOT write explanations, summaries, or repeat previous content
+
+## 📝 RESPONSE FORMATTING (MAKE IT VISUALLY ENGAGING)
+
+Your responses must be SCANNABLE and BEAUTIFUL. Use these techniques:
+
+### Visual Hierarchy
+- Use `## Headings` for main sections
+- Use `### Subheadings` for subsections  
+- Add blank lines between sections for breathing room
+
+### Text Variety
+- Use **bold** for key terms and definitions
+- Use *italics* for emphasis or foreign terms
+- Use `inline code` for technical terms, functions, commands
+- Use > blockquotes for important notes, tips, or warnings
+
+### Lists & Structure
+- Use bullet points liberally (like this!)
+- Use numbered lists for sequential steps
+- Keep list items SHORT (one line each)
+
+### Code & Examples
+```python
+# Use code blocks for any code
+def example():
+    return "like this"
+```
+
+### Emojis (Strategic Use)
+- 📌 Pin important points
+- ⚠️ Warnings or gotchas
+- 💡 Tips and insights
+- ✅ Correct approaches
+- ❌ Common mistakes
+- 🎯 Goals or objectives
+- 📚 References
+
+### Spacing & Readability
+- Maximum 2-3 sentences per paragraph
+- Add TWO line breaks between major sections
+- Never write walls of text
+
+### Example Response Format:
+```
+## 📌 Topic Name
+
+Brief intro that hooks the reader (1-2 sentences).
+
+
+### 🔑 Key Concept 1
+
+> 💡 **Important**: This is a key insight in a blockquote.
+
+Here's the explanation in plain terms:
+- Point one
+- Point two
+- Point three
+
+
+### ⚙️ How It Works
+
+Step-by-step breakdown:
+1. First step
+2. Second step  
+3. Third step
+
+
+### ✅ Summary
+
+**Key Takeaway**: One sentence wrap-up.
+
+
+---
+
+🎯 Ready to test your knowledge, or shall we explore [specific topic] next?
+```
+
 
 1. **CONTENT DELIVERY FIRST**:
-You are an AI Tutor, not a general-purpose chatbot.
+You are an AI Tutor called Siksak, not a general-purpose chatbot.
 
 Your primary responsibility is to TEACH, not just answer.
 Your success is measured by learner understanding, retention, and progress over time.
@@ -123,11 +232,10 @@ Your success is measured by learner understanding, retention, and progress over 
 ────────────────────────
 CORE IDENTITY
 ────────────────────────
-You are a personalized AI tutor designed for structured learning.
-You adapt to the learner’s level, remember their progress, and guide them through concepts step by step.
+You are Siksak, a personalized AI tutor designed for structured learning.
+You adapt to the learner's level, remember their progress, and guide them through concepts step by step.
 
-You are not ChatGPT.
-You are closer to a real teacher, mentor, and curriculum guide.
+You are not ChatGPT. You are a real teacher, mentor, and curriculum guide.
 
 ────────────────────────
 TEACHING PHILOSOPHY
@@ -138,8 +246,8 @@ Rules:
 - Break complex ideas into small, logical steps
 - Explain WHY something works, not just WHAT it is
 - Prefer clarity over cleverness
-- Ask clarifying questions only when it improves learning
-- Encourage thinking, not guessing
+- Keep responses SHORT and digestible (under 150 words)
+- Always suggest what to explore next
 
 If the user is confused, slow down.
 If the user is advanced, increase depth.
@@ -156,13 +264,8 @@ Use memory to:
 - Personalize explanations
 - Understand strengths and weak areas
 
-Memory should represent:
-- Learning progress
-- Concept mastery
-- Common misunderstandings
-
-Do NOT treat memory as chat history.
-Treat it as a learner profile.
+IMPORTANT: Do NOT mention memory operations to the user.
+Memory operations happen silently in the background.
 
 Store only educationally relevant information.
 
@@ -173,9 +276,8 @@ Learning should be interactive and engaging.
 
 Rules:
 - Do not always give direct answers immediately
-- Use short challenges or micro-questions before explanations
+- Use short challenges or micro-questions
 - Encourage the learner to attempt first
-- Reward effort, reasoning, and self-correction more than correctness
 - Use light gamification language (XP, streaks, mastery levels)
 
 Examples:
@@ -192,7 +294,7 @@ Gamification must:
 CURRENT LEARNER STATS
 ────────────────────────
 XP: {xp}
-Streak: {streak} days (Note: If they just studied yesterday, this might increase if they study today!)
+Streak: {streak} days
 
 ────────────────────────
 LEARNING STATE & MASTERY
@@ -216,19 +318,24 @@ Your available tools:
 1. save_memory: Use this to save general facts about the user's life or preferences.
 2. update_concept_state: Use this to track the user's mastery of specific concepts (New, Practicing, Mastered).
 3. manage_gamification: Use this to award XP or update streaks.
+4. present_quiz: Display a visual interactive quiz with 3 questions.
+5. web_search: Search the web for learning resources, tutorials, and documentation.
+6. generate_cheatsheet: Create a clean, printable HTML cheatsheet summarizing key concepts.
 
 When to use tools:
 - ONLY after providing a full, helpful response.
 - Do NOT use tools to answer questions.
 - Use `update_concept_state` when the user demonstrates understanding or struggles, or explicitly starts a new topic.
 - Use `manage_gamification` when the user completes a challenge, gives a good answer, or shows engagement. Be generous with small XP amounts (10-50 XP).
-- Use `present_quiz` when you want to test the user's knowledge. This will show a visual interactive card.
+- Use `present_quiz` when you want to test the user's knowledge OR when the user asks to be quizzed.
+- Use `web_search` when the user asks for learning resources, tutorials, or external references.
+- Use `generate_cheatsheet` when the user asks for a summary, cheatsheet, or wants to consolidate learning.
 
 ────────────────────────
 VISUAL QUIZ PROTOCOL
 ────────────────────────
-When you use the `present_quiz` tool, it will generate a special block in your response.
-DO NOT manually write the JSON block. Just call the tool.
+When you use the `present_quiz` tool, provide an array of 3 questions.
+The quiz will display them sequentially to the user.
 Use quizzes to check understanding after explaining a topic.
 
 ────────────────────────
@@ -239,11 +346,6 @@ If this list is not empty, you should:
 1. Provide your main response to the user's current input first.
 2. Then, transition: "By the way, it's time for a Neural Sync check on [Topic]."
 3. Use `present_quiz` to test that topic.
-
-When explaining NEW concepts:
-1. Explain the concept clearly.
-2. Say "Let's test your understanding."
-3. Use `present_quiz` to generate a relevant question.
 
 ────────────────────────
 NOTE ON GUEST MODE
@@ -321,81 +423,336 @@ NOTE ON GUEST MODE
             },
             {
                 "name": "present_quiz",
-                "description": "Display a visual, interactive multiple-choice quiz to the user.",
+                "description": "Display a visual, interactive multiple-choice quiz with 3 questions to the user.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "question": {"type": "string", "description": "The question to ask."},
-                        "options": {"type": "array", "items": {"type": "string"}, "description": "List of 4 options."},
-                        "correct_answer": {"type": "string", "description": "The correct option (must match one of the options exactly)."},
-                        "hint": {"type": "string", "description": "A helpful hint."},
-                        "explanation": {"type": "string", "description": "Explanation to show after they answer."},
-                        "xp_reward": {"type": "integer", "description": "XP to award for correct answer (default 100)."}
+                        "questions": {
+                            "type": "array",
+                            "description": "Array of 3 quiz questions",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "question": {"type": "string", "description": "The question to ask."},
+                                    "options": {"type": "array", "items": {"type": "string"}, "description": "List of 4 options."},
+                                    "correct_answer": {"type": "string", "description": "The correct option (must match one of the options exactly)."},
+                                    "hint": {"type": "string", "description": "A helpful hint."},
+                                    "explanation": {"type": "string", "description": "Explanation to show after they answer."},
+                                    "xp_reward": {"type": "integer", "description": "XP to award for correct answer (default 100)."}
+                                },
+                                "required": ["question", "options", "correct_answer", "explanation"]
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                        }
                     },
-                    "required": ["question", "options", "correct_answer", "explanation"]
+                    "required": ["questions"]
+                }
+            },
+            {
+                "name": "web_search",
+                "description": "Search the web for learning resources, tutorials, documentation, or other educational content relevant to the current topic.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query to find relevant resources."},
+                        "num_results": {"type": "integer", "description": "Number of results to return (default 5, max 10)."}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "generate_cheatsheet",
+                "description": "Generate a clean, printable HTML cheatsheet summarizing key concepts from the conversation.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "topic": {"type": "string", "description": "The main topic of the cheatsheet."},
+                        "sections": {
+                            "type": "array",
+                            "description": "Array of sections to include in the cheatsheet.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string", "description": "Section title."},
+                                    "content": {"type": "string", "description": "Section content (can include code, examples, key points)."}
+                                },
+                                "required": ["title", "content"]
+                            }
+                        },
+                        "tips": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of quick tips or mnemonics."
+                        }
+                    },
+                    "required": ["topic", "sections"]
                 }
             }
         ]
         
-        #repsonse call from the model is stored int heis variable 
-        response = await self.llm.generate(llm_messages, tools if not is_guest_mode else None)
+        # Execution Loop (ReAct Pattern)
+        turn_messages = llm_messages.copy()
+        final_response_text = ""
+        iteration = 0
+        MAX_ITERATIONS = 5
         
-        final_response_text = response.content
-        
-        # Handle tool calls (skip in guest mode)
-        if response.tool_calls and not is_guest_mode:
+        while iteration < MAX_ITERATIONS:
+            iteration += 1
+            # Call LLM
+            response = await self.llm.generate(turn_messages, tools if not is_guest_mode else None)
+            
+            # Append text content to the final user response
+            if response.content:
+                final_response_text += response.content
+            
+            # If no tool calls or guest mode, we are done
+            if not response.tool_calls or is_guest_mode:
+                break
+            
+            # Add Assistant Message (with tools) to history
+            # We use the helper to format it correctly for the provider (Claude vs OpenAI)
+            asst_msg = self.llm.format_tool_call_message(response.tool_calls, response.content)
+            turn_messages.append(asst_msg)
+            
+            # Execute Tools
             for tool in response.tool_calls:
-                if tool["name"] == "save_memory":
-                    content_to_save = tool["input"]["content"]
-                    category = tool["input"].get("category", "general")
-                    await self.memory.add_memory(content_to_save, user_id, metadata={"category": category})
-                    final_response_text += f"\n\n(I have updated my memory: '{content_to_save}')"
-                elif tool["name"] == "update_concept_state":
-                    concept = tool["input"]["concept"]
-                    state = tool["input"]["state"]
-                    performance = tool["input"].get("performance", "medium")
+                tool_name = tool["name"]
+                tool_input = tool["input"]
+                tool_id = tool["id"]
+                
+                tool_result_for_llm = "Tool executed successfully." # Default
+                user_facing_log = ""
+                
+                try:
+                    if tool_name == "save_memory":
+                        content_to_save = tool_input["content"]
+                        category = tool_input.get("category", "general")
+                        await self.memory.add_memory(content_to_save, user_id, metadata={"category": category})
+                        
+                        tool_result_for_llm = f"Saved memory: {content_to_save}"
+                        # No user-facing log - memory operations are silent
+                        print(f"[DEBUG] Memory saved: {content_to_save}")
+                        
+                    elif tool_name == "update_concept_state":
+                        concept = tool_input["concept"]
+                        state = tool_input["state"]
+                        performance = tool_input.get("performance", "medium")
+                        
+                        # Logic for Spaced Repetition (SRS)
+                        days_to_add = 1
+                        if performance == "medium": days_to_add = 3
+                        if performance == "high": days_to_add = 14
+                        
+                        next_review = (datetime.now() + timedelta(days=days_to_add)).isoformat()
+                        
+                        meta = {
+                            "category": "learning_progress", 
+                            "state": state,
+                            "last_performance": performance,
+                            "last_reviewed_date": datetime.now().isoformat(),
+                            "next_review_date": next_review
+                        }
+                        
+                        await self.memory.add_memory(concept, user_id, metadata=meta)
+                        
+                        tool_result_for_llm = f"Updated concept '{concept}' to state '{state}'."
+                        # No user-facing log - concept state updates are silent
+                        print(f"[DEBUG] Concept state updated: {concept} -> {state}")
+                        
+                    elif tool_name == "manage_gamification":
+                        xp_amount = tool_input["xp_amount"]
+                        reason = tool_input.get("reason", "Learning activity")
+                        
+                        # Update User in DB
+                        stmt = update(User).where(User.id == user_id).values(xp=User.xp + xp_amount)
+                        await self.db.execute(stmt)
+                        await self.db.commit()
+                        
+                        tool_result_for_llm = f"Awarded {xp_amount} XP."
+                        # No user-facing log - XP awards are silent
+                        print(f"[DEBUG] XP awarded: +{xp_amount} for {reason}")
+                        
+                    elif tool_name == "present_quiz":
+                        import json
+                        quiz_data = tool_input
+                        # Ensure each question has xp_reward
+                        if "questions" in quiz_data:
+                            for q in quiz_data["questions"]:
+                                q["xp_reward"] = q.get("xp_reward", 100)
+                        # Create the Protocol Block
+                        json_str = json.dumps(quiz_data)
+                        
+                        tool_result_for_llm = "Quiz presented to user."
+                        user_facing_log = f"\n\n:::quiz {json_str} :::"
                     
-                    # Logic for Spaced Repetition (SRS)
-                    # Low -> 1 day, Medium -> 3 days, High -> 14 days
-                    days_to_add = 1
-                    if performance == "medium": days_to_add = 3
-                    if performance == "high": days_to_add = 14
+                    elif tool_name == "web_search":
+                        import json
+                        from duckduckgo_search import DDGS
+                        
+                        query = tool_input["query"]
+                        num_results = min(tool_input.get("num_results", 5), 10)
+                        
+                        try:
+                            with DDGS() as ddgs:
+                                # region='wt-wt' = worldwide English, ensures English results
+                                results = list(ddgs.text(query, region='wt-wt', max_results=num_results))
+                            
+                            # Format results for display
+                            resources = []
+                            for r in results:
+                                resources.append({
+                                    "title": r.get("title", ""),
+                                    "url": r.get("href", r.get("link", "")),
+                                    "description": r.get("body", r.get("snippet", ""))
+                                })
+                            
+                            resource_data = {
+                                "query": query,
+                                "resources": resources
+                            }
+                            json_str = json.dumps(resource_data)
+                            
+                            tool_result_for_llm = f"Found {len(resources)} resources for '{query}'."
+                            user_facing_log = f"\n\n:::resources {json_str} :::"
+                            print(f"[DEBUG] Web search for '{query}': found {len(resources)} results")
+                        except Exception as e:
+                            tool_result_for_llm = f"Web search failed: {str(e)}"
+                            print(f"[DEBUG] Web search error: {e}")
                     
-                    next_review = (datetime.now() + timedelta(days=days_to_add)).isoformat()
-                    
-                    meta = {
-                        "category": "learning_progress", 
-                        "state": state,
-                        "last_performance": performance,
-                        "last_reviewed_date": datetime.now().isoformat(),
-                        "next_review_date": next_review
-                    }
-                    
-                    await self.memory.add_memory(concept, user_id, metadata=meta)
-                    final_response_text += f"\n\n(Updated '{concept}' to state: {state}. Next review in {days_to_add} days.)"
-                elif tool["name"] == "manage_gamification":
-                    xp_amount = tool["input"]["xp_amount"]
-                    reason = tool["input"].get("reason", "Learning activity")
-                    
-                    # Update User in DB
-                    # We need to fetch user again to be safe or just use update stmt
-                    from sqlalchemy import update
-                    stmt = update(User).where(User.id == user_id).values(xp=User.xp + xp_amount)
-                    await self.db.execute(stmt)
-                    await self.db.commit()
-                    
-                    final_response_text += f"\n\n(🌟 +{xp_amount} XP! {reason})"
-                elif tool["name"] == "present_quiz":
-                    import json
-                    quiz_data = tool["input"]
-                    quiz_data["xp_reward"] = quiz_data.get("xp_reward", 100)
-                    # Create the Protocol Block
-                    json_str = json.dumps(quiz_data)
-                    final_response_text += f"\n\n:::quiz {json_str} :::\n\n(I've prepared a quiz for you above!)"
+                    elif tool_name == "generate_cheatsheet":
+                        import json
+                        
+                        topic = tool_input["topic"]
+                        sections = tool_input.get("sections", [])
+                        tips = tool_input.get("tips", [])
+                        
+                        # Generate styled HTML cheatsheet
+                        sections_html = ""
+                        for section in sections:
+                            # Escape HTML and convert newlines
+                            content = section["content"].replace("\n", "<br>")
+                            sections_html += f'''
+                            <div class="section">
+                                <h3>{section["title"]}</h3>
+                                <div class="content">{content}</div>
+                            </div>'''
+                        
+                        tips_html = ""
+                        if tips:
+                            tips_items = "".join([f"<li>{tip}</li>" for tip in tips])
+                            tips_html = f'''
+                            <div class="tips">
+                                <h3>💡 Quick Tips</h3>
+                                <ul>{tips_items}</ul>
+                            </div>'''
+                        
+                        html_content = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{topic} - Cheatsheet</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 24px;
+            background: #faf8f5;
+            color: #2d2a26;
+            line-height: 1.6;
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #74523b;
+        }}
+        h1 {{ color: #74523b; font-size: 28px; margin-bottom: 8px; }}
+        .subtitle {{ color: #6b5d4d; font-size: 14px; }}
+        .section {{
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border-left: 4px solid #af9d8e;
+        }}
+        h3 {{ color: #74523b; margin-bottom: 12px; font-size: 18px; }}
+        .content {{ color: #4a4541; }}
+        .tips {{
+            background: #f0ebe4;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 24px;
+        }}
+        .tips h3 {{ color: #74523b; }}
+        .tips ul {{ margin-left: 20px; margin-top: 8px; }}
+        .tips li {{ margin-bottom: 4px; color: #5a5046; }}
+        code {{
+            background: #f5f0eb;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 14px;
+        }}
+        @media print {{
+            body {{ padding: 12px; background: white; }}
+            .section {{ break-inside: avoid; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📚 {topic}</h1>
+        <div class="subtitle">Cheatsheet • Generated by Siksak</div>
+    </div>
+    {sections_html}
+    {tips_html}
+</body>
+</html>'''
+                        
+                        cheatsheet_data = {
+                            "topic": topic,
+                            "html": html_content
+                        }
+                        json_str = json.dumps(cheatsheet_data)
+                        
+                        tool_result_for_llm = f"Cheatsheet for '{topic}' generated successfully."
+                        user_facing_log = f"\n\n:::cheatsheet {json_str} :::"
+                        print(f"[DEBUG] Generated cheatsheet for '{topic}'")
+                        
+                    else:
+                        tool_result_for_llm = f"Error: Unknown tool {tool_name}"
+                
+                except Exception as e:
+                    tool_result_for_llm = f"Error executing tool {tool_name}: {str(e)}"
+                    print(f"Tool Execution Error: {e}")
+                
+                # Append user facing log -> We want the user to see these updates immediately in the text stream
+                # usually, but here we just append to the final block.
+                final_response_text += user_facing_log
+                
+                # Append Tool Result to history
+                res_msg = self.llm.format_tool_result_message(tool_id, tool_result_for_llm)
+                turn_messages.append(res_msg)
         
         # 3. Save Assistant Response
         ai_msg_db = Message(conversation_id=conversation_id, role="assistant", content=final_response_text)
         self.db.add(ai_msg_db)
         await self.db.commit()
         
-        return {"response": final_response_text}
+        # 4. Auto-generate title if this is the first message
+        response_data = {"response": final_response_text}
+        
+        if len(messages) == 0 and not is_guest_mode:
+            try:
+                new_title = await self.generate_title(user_message)
+                # Update conversation title in DB
+                conv_stmt = update(Conversation).where(Conversation.id == conversation_id).values(title=new_title)
+                await self.db.execute(conv_stmt)
+                await self.db.commit()
+                response_data["new_title"] = new_title
+                print(f"[DEBUG] Auto-generated title: {new_title}")
+            except Exception as e:
+                print(f"[DEBUG] Failed to generate title: {e}")
+        
+        return response_data

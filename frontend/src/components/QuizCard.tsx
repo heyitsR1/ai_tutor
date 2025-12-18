@@ -1,153 +1,377 @@
-import React, { useState } from 'react';
-import { Trophy, HelpCircle, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
-import axios from 'axios';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { useState } from 'react';
+import { HelpCircle, CheckCircle2, XCircle, ChevronRight, Trophy } from 'lucide-react';
+
+interface Question {
+    question: string;
+    options: string[];
+    correct_answer: string;
+    hint?: string;
+    xp_reward: number;
+    explanation?: string;
+}
 
 interface QuizCardProps {
     data: {
-        question: string;
-        options: string[];
-        correct_answer: string;
+        questions?: Question[];
+        // Legacy single question format
+        question?: string;
+        options?: string[];
+        correct_answer?: string;
         hint?: string;
-        xp_reward: number;
+        xp_reward?: number;
         explanation?: string;
     };
     onComplete?: (xp: number) => void;
 }
 
 export function QuizCard({ data, onComplete }: QuizCardProps) {
+    // Normalize data to always work with questions array
+    const questions: Question[] = data.questions || [{
+        question: data.question || '',
+        options: data.options || [],
+        correct_answer: data.correct_answer || '',
+        hint: data.hint,
+        xp_reward: data.xp_reward || 100,
+        explanation: data.explanation
+    }];
+
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [showHint, setShowHint] = useState(false);
-    const [currentXp, setCurrentXp] = useState(data.xp_reward);
-    const [completed, setCompleted] = useState(false);
+    const [questionCompleted, setQuestionCompleted] = useState(false);
+    const [totalXpEarned, setTotalXpEarned] = useState(0);
+    const [currentXpAvailable, setCurrentXpAvailable] = useState(questions[0]?.xp_reward || 100);
+    const [quizFinished, setQuizFinished] = useState(false);
+    const [correctAnswers, setCorrectAnswers] = useState(0);
+
+    const currentQuestion = questions[currentQuestionIndex];
+    const totalQuestions = questions.length;
+    const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
 
     const handleSelect = (option: string) => {
-        if (completed) return;
+        if (questionCompleted) return;
         setSelectedOption(option);
-        setCompleted(true);
+        setQuestionCompleted(true);
 
-        const isCorrect = option === data.correct_answer;
-        if (isCorrect && onComplete) {
-            onComplete(currentXp);
+        const isCorrect = option === currentQuestion.correct_answer;
+        if (isCorrect) {
+            setTotalXpEarned(prev => prev + currentXpAvailable);
+            setCorrectAnswers(prev => prev + 1);
+        }
+    };
+
+    const handleNextQuestion = () => {
+        if (isLastQuestion) {
+            // Quiz finished
+            setQuizFinished(true);
+            if (onComplete) {
+                onComplete(totalXpEarned);
+            }
+        } else {
+            // Move to next question
+            const nextIndex = currentQuestionIndex + 1;
+            setCurrentQuestionIndex(nextIndex);
+            setSelectedOption(null);
+            setShowHint(false);
+            setQuestionCompleted(false);
+            setCurrentXpAvailable(questions[nextIndex]?.xp_reward || 100);
         }
     };
 
     const handleHint = () => {
-        if (showHint || completed) return;
+        if (showHint || questionCompleted) return;
         setShowHint(true);
-        setCurrentXp(prev => Math.max(0, prev - 50));
+        setCurrentXpAvailable(prev => Math.max(0, prev - 50));
     };
 
-    return (
-        <div className="w-full max-w-2xl mx-auto my-8 relative rounded-xl overflow-hidden font-mono">
-            {/* Header Removed as per new global theme */}
-
-            {/* Main Card */}
-            <div className="relative z-10 p-2 sm:p-6">
-                <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/60 p-6 sm:p-8">
-
-                    {/* Meta Row */}
-                    <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-purple-100 text-purple-600 border border-purple-200 shadow-inner">
-                                <HelpCircle className="w-6 h-6" />
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</span>
-                                <span className="text-xs font-bold text-gray-700 uppercase tracking-widest">Question 1 of 3</span>
-                            </div>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-3xl font-black text-purple-600 tracking-tight">
-                                {currentXp}
-                            </div>
-                            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                XP Available
-                            </div>
-                        </div>
+    // Show completion summary
+    if (quizFinished) {
+        const percentage = Math.round((correctAnswers / totalQuestions) * 100);
+        return (
+            <div className="w-full max-w-2xl mx-auto my-6 relative rounded-xl overflow-hidden">
+                <div
+                    className="relative z-10 p-6 sm:p-8 rounded-2xl text-center"
+                    style={{
+                        backgroundColor: 'var(--color-surface)',
+                        border: '1px solid var(--color-border-light)',
+                        boxShadow: 'var(--shadow-md)'
+                    }}
+                >
+                    <div
+                        className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-4"
+                        style={{
+                            backgroundColor: percentage >= 70 ? 'rgba(93, 138, 102, 0.15)' : 'rgba(175, 157, 142, 0.15)',
+                            color: percentage >= 70 ? 'var(--color-success)' : 'var(--color-main)'
+                        }}
+                    >
+                        <Trophy className="w-8 h-8" />
                     </div>
 
-                    {/* Question */}
-                    <div className="mb-8">
-                        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 uppercase leading-tight tracking-tight">
-                            &gt; {data.question}
-                        </h2>
+                    <h3
+                        className="text-xl font-bold mb-2"
+                        style={{ color: 'var(--color-text-primary)' }}
+                    >
+                        Quiz Complete!
+                    </h3>
+
+                    <p
+                        className="text-sm mb-4"
+                        style={{ color: 'var(--color-text-secondary)' }}
+                    >
+                        You got <strong>{correctAnswers}</strong> out of <strong>{totalQuestions}</strong> questions correct ({percentage}%)
+                    </p>
+
+                    <div
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl"
+                        style={{
+                            backgroundColor: 'rgba(175, 157, 142, 0.15)',
+                            color: 'var(--color-accent)'
+                        }}
+                    >
+                        <span className="text-2xl font-bold">+{totalXpEarned}</span>
+                        <span className="text-xs font-semibold uppercase">XP Earned</span>
                     </div>
-
-                    {/* Options */}
-                    <div className="space-y-3 mb-8">
-                        {data.options.map((option, idx) => {
-                            const isSelected = selectedOption === option;
-                            const isCorrect = option === data.correct_answer;
-
-                            let baseStyle = "w-full p-4 rounded-xl border-2 text-left transition-all duration-200 flex items-center justify-between group relative overflow-hidden font-bold tracking-tight uppercase text-sm sm:text-base";
-                            let stateStyle = "bg-white border-slate-200 text-slate-600 hover:border-purple-300 hover:text-purple-600 hover:shadow-md hover:bg-purple-50/50";
-
-                            if (completed) {
-                                if (isCorrect) stateStyle = "bg-green-50 border-green-400 text-green-700 shadow-sm";
-                                else if (isSelected && !isCorrect) stateStyle = "bg-red-50 border-red-400 text-red-700 shadow-sm";
-                                else stateStyle = "bg-slate-50 border-slate-100 text-slate-300 opacity-60";
-                            }
-
-                            return (
-                                <button
-                                    key={idx}
-                                    onClick={() => handleSelect(option)}
-                                    disabled={completed}
-                                    className={twMerge(baseStyle, stateStyle)}
-                                >
-                                    <span className="relative z-10 flex items-center gap-3">
-                                        <span className={clsx("opacity-50", completed && isCorrect && "text-green-600")}>&gt;</span>
-                                        {option}
-                                    </span>
-                                    {completed && (
-                                        isCorrect ? <CheckCircle2 className="text-green-500 w-5 h-5 relative z-10" />
-                                            : (isSelected && <XCircle className="text-red-500 w-5 h-5 relative z-10" />)
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Footer / Hint */}
-                    <div className="flex flex-col gap-4">
-                        {!completed && (
-                            <button
-                                onClick={handleHint}
-                                disabled={showHint}
-                                className={twMerge(
-                                    "w-full py-3 rounded-lg text-xs font-bold uppercase tracking-[0.15em] transition-all border",
-                                    showHint
-                                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-default"
-                                        : "bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
-                                )}
-                            >
-                                {showHint ? "[ Hint Used -50 XP ]" : "[ 🔒 Use Hint -50 XP ]"}
-                            </button>
-                        )}
-
-                        {showHint && data.hint && (
-                            <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-800 text-sm font-medium animate-in fade-in slide-in-from-top-2">
-                                <span className="font-bold uppercase text-xs tracking-wider block mb-1 text-purple-400">Hint module decrypted:</span>
-                                {data.hint}
-                            </div>
-                        )}
-
-                        {completed && data.explanation && (
-                            <div className="p-6 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 mt-2 animate-in fade-in slide-in-from-bottom-4">
-                                <p className="font-bold text-slate-800 mb-2 flex items-center gap-2 uppercase tracking-wide text-xs">
-                                    {selectedOption === data.correct_answer ? "✅ Analysis Complete" : "❌ Analysis Complete"}
-                                </p>
-                                <p className="text-sm leading-relaxed">{data.explanation}</p>
-                            </div>
-                        )}
-                    </div>
-
                 </div>
             </div>
-            {/* Decorative bottom bar */}
-            <div className="h-1 w-full bg-gradient-to-r from-green-400 via-blue-500 to-purple-600" />
+        );
+    }
+
+    return (
+        <div className="w-full max-w-2xl mx-auto my-6 relative rounded-xl overflow-hidden">
+            {/* Main Card */}
+            <div
+                className="relative z-10 p-4 sm:p-6 rounded-2xl"
+                style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border-light)',
+                    boxShadow: 'var(--shadow-md)'
+                }}
+            >
+
+                {/* Meta Row */}
+                <div
+                    className="flex items-center justify-between mb-5 pb-4"
+                    style={{ borderBottom: '1px solid var(--color-border-light)' }}
+                >
+                    <div className="flex items-center gap-3">
+                        <div
+                            className="p-2 rounded-lg"
+                            style={{
+                                backgroundColor: 'rgba(175, 157, 142, 0.15)',
+                                color: 'var(--color-accent)'
+                            }}
+                        >
+                            <HelpCircle className="w-5 h-5" />
+                        </div>
+                        <div className="flex flex-col">
+                            <span
+                                className="text-[10px] font-medium uppercase tracking-wider"
+                                style={{ color: 'var(--color-text-muted)' }}
+                            >
+                                Quiz
+                            </span>
+                            <span
+                                className="text-xs font-semibold uppercase tracking-wide"
+                                style={{ color: 'var(--color-text-secondary)' }}
+                            >
+                                Question {currentQuestionIndex + 1} of {totalQuestions}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <div
+                            className="text-2xl font-bold tracking-tight"
+                            style={{ color: 'var(--color-accent)' }}
+                        >
+                            {currentXpAvailable}
+                        </div>
+                        <div
+                            className="text-[10px] font-medium uppercase tracking-wider"
+                            style={{ color: 'var(--color-text-muted)' }}
+                        >
+                            XP Available
+                        </div>
+                    </div>
+                </div>
+
+                {/* Progress Bar */}
+                {totalQuestions > 1 && (
+                    <div className="mb-5">
+                        <div
+                            className="h-1.5 rounded-full overflow-hidden"
+                            style={{ backgroundColor: 'var(--color-secondary)' }}
+                        >
+                            <div
+                                className="h-full rounded-full transition-all duration-300"
+                                style={{
+                                    width: `${((currentQuestionIndex + 1) / totalQuestions) * 100}%`,
+                                    backgroundColor: 'var(--color-accent)'
+                                }}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Question */}
+                <div className="mb-6">
+                    <h2
+                        className="text-lg sm:text-xl font-semibold leading-tight"
+                        style={{ color: 'var(--color-text-primary)' }}
+                    >
+                        {currentQuestion.question}
+                    </h2>
+                </div>
+
+                {/* Options */}
+                <div className="space-y-2.5 mb-6">
+                    {currentQuestion.options.map((option, idx) => {
+                        const isSelected = selectedOption === option;
+                        const isCorrect = option === currentQuestion.correct_answer;
+
+                        let bgColor = 'var(--color-surface-warm)';
+                        let borderColor = 'var(--color-border-light)';
+                        let textColor = 'var(--color-text-primary)';
+
+                        if (questionCompleted) {
+                            if (isCorrect) {
+                                bgColor = 'rgba(93, 138, 102, 0.1)';
+                                borderColor = 'var(--color-success)';
+                                textColor = 'var(--color-success)';
+                            } else if (isSelected && !isCorrect) {
+                                bgColor = 'rgba(166, 93, 93, 0.1)';
+                                borderColor = 'var(--color-error)';
+                                textColor = 'var(--color-error)';
+                            } else {
+                                bgColor = 'var(--color-secondary)';
+                                textColor = 'var(--color-text-muted)';
+                            }
+                        }
+
+                        return (
+                            <button
+                                key={idx}
+                                onClick={() => handleSelect(option)}
+                                disabled={questionCompleted}
+                                className="w-full p-4 rounded-xl text-left transition-all duration-200 flex items-center justify-between font-medium text-sm sm:text-base"
+                                style={{
+                                    backgroundColor: bgColor,
+                                    border: `1.5px solid ${borderColor}`,
+                                    color: textColor,
+                                    opacity: questionCompleted && !isCorrect && !isSelected ? 0.6 : 1,
+                                    cursor: questionCompleted ? 'default' : 'pointer'
+                                }}
+                                onMouseOver={(e) => {
+                                    if (!questionCompleted) {
+                                        e.currentTarget.style.borderColor = 'var(--color-main)';
+                                        e.currentTarget.style.backgroundColor = 'rgba(175, 157, 142, 0.15)';
+                                    }
+                                }}
+                                onMouseOut={(e) => {
+                                    if (!questionCompleted) {
+                                        e.currentTarget.style.borderColor = 'var(--color-border-light)';
+                                        e.currentTarget.style.backgroundColor = 'var(--color-surface-warm)';
+                                    }
+                                }}
+                            >
+                                <span>{option}</span>
+                                {questionCompleted && (
+                                    isCorrect ? <CheckCircle2 className="w-5 h-5" style={{ color: 'var(--color-success)' }} />
+                                        : (isSelected && <XCircle className="w-5 h-5" style={{ color: 'var(--color-error)' }} />)
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Footer / Hint / Next Button */}
+                <div className="flex flex-col gap-3">
+                    {!questionCompleted && (
+                        <button
+                            onClick={handleHint}
+                            disabled={showHint}
+                            className="w-full py-3 rounded-lg text-xs font-semibold uppercase tracking-wide transition-all"
+                            style={{
+                                backgroundColor: showHint ? 'var(--color-secondary)' : 'rgba(175, 157, 142, 0.15)',
+                                color: showHint ? 'var(--color-text-muted)' : 'var(--color-accent)',
+                                border: `1px solid ${showHint ? 'var(--color-border)' : 'rgba(116, 82, 59, 0.2)'}`,
+                                cursor: showHint ? 'default' : 'pointer'
+                            }}
+                        >
+                            {showHint ? "Hint Used (-50 XP)" : "🔒 Use Hint (-50 XP)"}
+                        </button>
+                    )}
+
+                    {showHint && currentQuestion.hint && (
+                        <div
+                            className="p-4 rounded-xl text-sm font-medium"
+                            style={{
+                                backgroundColor: 'rgba(175, 157, 142, 0.1)',
+                                color: 'var(--color-text-primary)',
+                                border: '1px solid rgba(175, 157, 142, 0.2)'
+                            }}
+                        >
+                            <span
+                                className="font-semibold uppercase text-xs tracking-wider block mb-1"
+                                style={{ color: 'var(--color-main)' }}
+                            >
+                                Hint:
+                            </span>
+                            {currentQuestion.hint}
+                        </div>
+                    )}
+
+                    {questionCompleted && currentQuestion.explanation && (
+                        <div
+                            className="p-5 rounded-xl text-sm mt-2"
+                            style={{
+                                backgroundColor: 'var(--color-surface-warm)',
+                                border: '1px solid var(--color-border-light)'
+                            }}
+                        >
+                            <p
+                                className="font-semibold mb-2 flex items-center gap-2 text-xs uppercase tracking-wide"
+                                style={{ color: selectedOption === currentQuestion.correct_answer ? 'var(--color-success)' : 'var(--color-error)' }}
+                            >
+                                {selectedOption === currentQuestion.correct_answer ? "✓ Correct!" : "✗ Incorrect"}
+                            </p>
+                            <p
+                                className="leading-relaxed"
+                                style={{ color: 'var(--color-text-secondary)' }}
+                            >
+                                {currentQuestion.explanation}
+                            </p>
+                        </div>
+                    )}
+
+                    {questionCompleted && (
+                        <button
+                            onClick={handleNextQuestion}
+                            className="w-full py-3.5 rounded-xl text-sm font-semibold uppercase tracking-wide transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                            style={{
+                                backgroundColor: 'var(--color-accent)',
+                                color: 'white',
+                                boxShadow: '0 4px 12px rgba(116, 82, 59, 0.3)'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#5D4130'}
+                            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--color-accent)'}
+                        >
+                            {isLastQuestion ? (
+                                <>
+                                    <Trophy className="w-4 h-4" />
+                                    Finish Quiz
+                                </>
+                            ) : (
+                                <>
+                                    Next Question
+                                    <ChevronRight className="w-4 h-4" />
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
+
+            </div>
         </div>
     );
 }
+

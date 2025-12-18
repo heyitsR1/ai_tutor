@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Chat } from './components/Chat';
 import { Sidebar } from './components/Sidebar';
 import { Profile } from './components/Profile';
-import { Menu, Sparkles, Zap, BrainCircuit } from 'lucide-react';
+import { Settings } from './components/Settings';
+import { Menu, Zap, Settings as SettingsIcon } from 'lucide-react';
 import axios from 'axios';
+import aiTutorIcon from './assets/ai_tutor.svg';
 
 // Configure axios base URL
-axios.defaults.baseURL = 'http://localhost:8000';
+axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 interface Conversation {
   id: number;
@@ -20,6 +22,7 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<number>(1);
   const [showProfile, setShowProfile] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const fetchConversations = async () => {
     try {
@@ -55,6 +58,7 @@ function App() {
   const handleSelectConversation = (id: number) => {
     setCurrentConversationId(id);
     setShowProfile(false);
+    setShowSettings(false);
     if (window.innerWidth < 768) setIsSidebarOpen(false);
   };
 
@@ -66,16 +70,30 @@ function App() {
 
   const handleProfileClick = () => {
     setShowProfile(true);
+    setShowSettings(false);
     setCurrentConversationId(null);
     if (window.innerWidth < 768) setIsSidebarOpen(false);
   };
 
+  const handleSettingsClick = () => {
+    setShowSettings(true);
+    setShowProfile(false);
+    setCurrentConversationId(null);
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
+  const handleTitleUpdate = (convId: number, newTitle: string) => {
+    setConversations(prev =>
+      prev.map(c => c.id === convId ? { ...c, title: newTitle } : c)
+    );
+  };
+
   return (
-    <div className="flex h-screen overflow-hidden text-slate-800 font-sans">
+    <div className="flex h-screen overflow-hidden font-sans" style={{ color: 'var(--color-text-primary)' }}>
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/30 z-20 md:hidden backdrop-blur-sm"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -100,35 +118,84 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10 w-full h-full transition-all duration-300">
 
-        {/* Dynamic Background Glows */}
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] pointer-events-none -mr-40 -mt-40 mix-blend-multiply"></div>
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none -ml-40 -mb-40 mix-blend-multiply"></div>
+        {/* Subtle warm background accents */}
+        <div
+          className="absolute top-0 right-0 w-[400px] h-[400px] rounded-full blur-[120px] pointer-events-none -mr-32 -mt-32 opacity-30"
+          style={{ backgroundColor: 'var(--color-main)' }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full blur-[120px] pointer-events-none -ml-32 -mb-32 opacity-20"
+          style={{ backgroundColor: 'var(--color-secondary)' }}
+        />
 
-        <header className="h-16 border-b border-indigo-100 bg-white/70 backdrop-blur-xl flex items-center px-4 justify-between shadow-sm sticky top-0 z-20">
+        <header
+          className="h-16 flex items-center px-4 justify-between sticky top-0 z-20 backdrop-blur-md"
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.85)',
+            borderBottom: '1px solid var(--color-border-light)'
+          }}
+        >
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 hover:bg-slate-100 rounded-xl md:hidden text-slate-600 transition-colors"
+              className="p-2 rounded-xl md:hidden transition-colors"
+              style={{ color: 'var(--color-text-secondary)' }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--color-secondary)'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
               <Menu size={20} />
             </button>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <BrainCircuit className="text-white w-5 h-5" />
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center"
+                style={{
+                  backgroundColor: 'rgba(116, 82, 59, 0.25)',
+                  boxShadow: '0 2px 8px rgba(116, 82, 59, 0.25)'
+                }}
+              >
+                <img src={aiTutorIcon} alt="Siksak" className="w-10 h-10" />
               </div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent tracking-tight">
+              <h1
+                className="text-xl font-bold tracking-tight"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
                 Siksak
               </h1>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white/50 border border-white/50 rounded-full shadow-sm backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            <span className="text-xs font-semibold text-slate-500">SYSTEM ONLINE</span>
+          <div
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full"
+            style={{
+              backgroundColor: 'var(--color-surface-warm)',
+              border: '1px solid var(--color-border-light)'
+            }}
+          >
+            <span
+              className="w-2 h-2 rounded-full animate-pulse"
+              style={{ backgroundColor: 'var(--color-success)' }}
+            />
+            <span
+              className="text-xs font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              Ready to Learn
+            </span>
           </div>
+          {/* Settings Button */}
+          <button
+            onClick={handleSettingsClick}
+            className="p-2 rounded-xl transition-colors hover:bg-gray-100"
+            style={{ color: 'var(--color-text-secondary)' }}
+            title="Settings"
+          >
+            <SettingsIcon size={20} />
+          </button>
         </header>
 
         <main className="flex-1 overflow-hidden relative z-10 h-full flex flex-col">
-          {showProfile ? (
+          {showSettings ? (
+            <Settings userId={currentUserId} onClose={() => setShowSettings(false)} />
+          ) : showProfile ? (
             <Profile userId={currentUserId} onClose={() => setShowProfile(false)} />
           ) : currentConversationId ? (
             <Chat
@@ -137,40 +204,80 @@ function App() {
                 fetchConversations();
                 setCurrentConversationId(newId);
               }}
+              onTitleUpdate={handleTitleUpdate}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-              <div className="max-w-2xl w-full space-y-10 relative">
+              <div className="max-w-xl w-full space-y-8">
 
                 {/* Hero Card */}
-                <div className="relative bg-white/80 backdrop-blur-xl border border-indigo-50 p-8 sm:p-12 rounded-3xl shadow-2xl shadow-indigo-500/10 overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-600"></div>
+                <div
+                  className="relative p-8 sm:p-10 rounded-2xl overflow-hidden"
+                  style={{
+                    backgroundColor: 'var(--color-surface)',
+                    border: '1px solid var(--color-border-light)',
+                    boxShadow: 'var(--shadow-lg)'
+                  }}
+                >
+                  {/* Subtle top accent bar */}
+                  <div
+                    className="absolute top-0 left-0 w-full h-1"
+                    style={{ backgroundColor: 'var(--color-main)' }}
+                  />
 
-                  <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-2xl mx-auto flex items-center justify-center shadow-xl shadow-purple-500/30 mb-6 rotate-3 hover:rotate-6 transition-transform duration-500">
-                    <Sparkles className="w-10 h-10 text-white" />
+                  <div
+                    className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-6 transition-transform hover:scale-105"
+                    style={{
+                      backgroundColor: 'rgba(116, 82, 59, 0.25)',
+                      boxShadow: '0 4px 16px rgba(175, 157, 142, 0.35)'
+                    }}
+                  >
+                    <img src={aiTutorIcon} alt="Siksak" className="w-10 h-10" />
                   </div>
 
-                  <h2 className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-900 via-indigo-800 to-slate-900 mb-4 tracking-tight">
+                  <h2
+                    className="text-3xl sm:text-4xl font-bold mb-3 tracking-tight"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
                     Ready to Learn?
                   </h2>
-                  <p className="text-lg text-slate-600 max-w-lg mx-auto leading-relaxed">
-                    Your AI-powered mentor is ready. Experience adaptive learning with the new <span className="font-semibold text-indigo-600">Siksak</span> engine.
+                  <p
+                    className="text-base max-w-md mx-auto leading-relaxed mb-8"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    Your AI-powered tutor is here to help. Let's explore new concepts together at your own pace.
                   </p>
 
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
                     <button
                       onClick={() => handleNewChat(false)}
-                      className="group relative px-8 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold transition-all shadow-xl shadow-slate-900/20 active:scale-95 flex items-center justify-center gap-2 overflow-hidden"
+                      className="group px-6 py-3.5 text-white rounded-xl font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                      style={{
+                        backgroundColor: 'var(--color-accent)',
+                        boxShadow: '0 4px 12px rgba(116, 82, 59, 0.3)'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#5D4130'}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--color-accent)'}
                     >
-                      <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                      <span className="relative z-10 flex items-center gap-2">
-                        <Zap className="w-5 h-5 fill-current" />
-                        Start Learning
-                      </span>
+                      <Zap className="w-4 h-4" />
+                      Start Learning
                     </button>
                     <button
                       onClick={() => handleNewChat(true)}
-                      className="px-8 py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-2xl font-bold transition-all shadow-sm flex items-center justify-center hover:border-slate-300"
+                      className="px-6 py-3.5 rounded-xl font-semibold transition-all flex items-center justify-center"
+                      style={{
+                        backgroundColor: 'var(--color-surface)',
+                        color: 'var(--color-text-secondary)',
+                        border: '1px solid var(--color-border)'
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.backgroundColor = 'var(--color-surface-warm)';
+                        e.currentTarget.style.borderColor = 'var(--color-main)';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                        e.currentTarget.style.borderColor = 'var(--color-border)';
+                      }}
                     >
                       Guest Mode
                     </button>
@@ -188,3 +295,4 @@ function App() {
 }
 
 export default App
+
