@@ -1,4 +1,4 @@
-# 🎓 Siksak AI Tutor
+#  Siksak AI Tutor
 
 An intelligent, **agentic AI tutoring system** with long-term memory, gamification, and personalized learning experiences. Built with a ReAct (Reasoning + Acting) loop architecture that autonomously decides when to use tools, store memories, and adapt to learner needs.
 
@@ -8,24 +8,24 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🧠 Agentic Capabilities
+### Agentic Capabilities
 - **ReAct Loop Architecture**: Autonomous reasoning with multi-step tool calling (max 5 iterations per request)
 - **Autonomous Decision Making**: AI decides when to save memories, generate quizzes, or search for resources
 - **Context-Aware Responses**: Maintains conversation history + retrieved memories for personalized interactions
 
-### 💾 Long-Term Memory (RAG)
+### Long-Term Memory (RAG)
 - **Persistent Memory**: User profiles, learning preferences, and progress stored across sessions
 - **Vector Similarity Search**: Uses `pgvector` with 384-dimensional embeddings for semantic retrieval
 - **Spaced Repetition System (SRS)**: Automatically schedules topic reviews based on performance
 
-### 🎮 Gamification System
+###  Gamification System
 - **XP & Leveling**: Earn points for correct answers, engagement, and learning milestones
 - **Streak Tracking**: Daily streak counter to encourage consistent learning
 - **Level Titles**: Progress from Novice → Apprentice → Scholar → Sage → Master → Grandmaster
 
-### 🛠 Interactive Tools
+###  Interactive Tools
 | Tool | Description |
 |------|-------------|
 | **Quiz Generator** | 3-question interactive quizzes with visual UI |
@@ -33,7 +33,7 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 | **Web Search** | DuckDuckGo integration for curated learning resources |
 | **Memory Manager** | Stores and retrieves user context autonomously |
 
-### 🔄 Multi-Provider LLM Support
+###  Multi-Provider LLM Support
 - **Anthropic Claude** (Default): Claude 3 Haiku
 - **OpenAI GPT**: GPT-4 compatible
 - **Groq**: Lightning-fast inference with Llama 3
@@ -41,7 +41,7 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 
 ---
 
-## 🏗 Architecture
+##  Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -85,7 +85,7 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 
 ---
 
-## 🛠 Tech Stack
+##  Tech Stack
 
 ### Frontend
 - **Framework**: [React 19](https://react.dev/) + [Vite](https://vitejs.dev/) + TypeScript
@@ -106,7 +106,7 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 
 ---
 
-## 📋 Prerequisites
+##  Prerequisites
 
 - [Docker](https://www.docker.com/) and Docker Compose
 - Node.js 18+ (for local frontend development only)
@@ -115,7 +115,7 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 
 ---
 
-## ⚡ Quick Start
+##  Quick Start
 
 1. **Clone the repository**
    ```bash
@@ -152,7 +152,7 @@ An intelligent, **agentic AI tutoring system** with long-term memory, gamificati
 
 ---
 
-## 🔧 Manual Development Setup
+##  Manual Development Setup
 
 ### Backend
 ```bash
@@ -172,7 +172,7 @@ npm run dev
 
 ---
 
-## 🔌 API Documentation
+##  API Documentation
 
 Once the backend is running, access the interactive API docs (Swagger UI) at:
 `http://localhost:8000/docs`
@@ -189,7 +189,7 @@ Once the backend is running, access the interactive API docs (Swagger UI) at:
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 .
@@ -214,7 +214,7 @@ Once the backend is running, access the interactive API docs (Swagger UI) at:
 
 ---
 
-## 🆚 What Makes Siksak Different?
+##  What Makes Siksak Different?
 
 | Feature | Siksak | ChatGPT/Claude |
 |---------|--------|----------------|
@@ -227,7 +227,7 @@ Once the backend is running, access the interactive API docs (Swagger UI) at:
 
 ---
 
-## 🚀 Future Roadmap
+##  Future Roadmap
 
 - [ ] Course/curriculum builder (multi-week learning paths)
 - [ ] Voice input for hands-free learning
@@ -237,6 +237,6 @@ Once the backend is running, access the interactive API docs (Swagger UI) at:
 
 ---
 
-## 📝 License
+##  License
 
 [MIT](LICENSE)
